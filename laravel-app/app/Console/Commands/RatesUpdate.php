@@ -30,14 +30,14 @@ class RatesUpdate extends Command
      *
      * @return int
      */
-    public function __construct(private Rates $rates, private OldRates $oldRates, private ExchangeRateRepositoryInterface $exchangeRateRepository)
+    public function __construct(private Rates $rates, private ExchangeRateRepositoryInterface $exchangeRateRepository)
     {
         parent::__construct();
     }
 
     public function handle(): void
     {
-        DataUpdateJob::dispatch($this->rates, $this->oldRates, $this->exchangeRateRepository);
+        DataUpdateJob::dispatch($this->rates, $this->exchangeRateRepository);
     }
 
 }

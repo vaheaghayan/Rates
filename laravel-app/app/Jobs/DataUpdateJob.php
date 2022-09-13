@@ -24,7 +24,7 @@ class DataUpdateJob implements ShouldQueue
      */
 
 
-    public function __construct(private Rates $rates,private OldRates $oldRates,private ExchangeRateRepositoryInterface $exchangeRateRepository)
+    public function __construct(private Rates $rates,private ExchangeRateRepositoryInterface $exchangeRateRepository)
     {}
 
     /**
@@ -37,35 +37,17 @@ class DataUpdateJob implements ShouldQueue
         $customLog = Log::channel('custom');
         $customLog->info('DataUpdateJob started');
 
-        $ratesArray = $this->rates->toArray();
-
-        if (!$this->exchangeRateRepository->getRatesCount())
-        {
-            $this->rates->insertToTable();
-            $customLog->info('DataUpdatedJob completed');
-            return;
-        }
-
-        if (count($ratesArray) != 6 or count($ratesArray[0]) != 14)
-        {
-            $customLog->error('Error: Data format is invalid');
-            $customLog->info('DataUpdatedJob completed');
-            return;
-        }
+        $this->rates->insertToTable();
 
 
-        $oldRatesArray = $this->oldRates->toArray();
+//        if (count($ratesArray[0]) != 14)
+//        {
+//            $customLog->error('Error: Data format is invalid');
+//            $customLog->info('DataUpdatedJob completed');
+//            return;
+//        }
 
-        if($oldRatesArray != $ratesArray)
-        {
-            $this->rates->insertToTable();
-        }else{
-            $customLog->info( 'The data does not need to be modified');
-            $customLog->info('DataUpdatedJob completed');
-            return;
-        }
 
-        $customLog->info( 'Data inserted into table');
         $customLog->info('DataUpdatedJob completed');
 
     }

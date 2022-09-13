@@ -9,29 +9,33 @@ use App\Interfaces\ExchangeRateRepositoryInterface;
 class Rates
 {
 
+    private function responseLogging($response): void
+    {
+        $log = [];
+        $log['status'] = $response->status();
+        $log['body'] = json_encode($response->body());
+        $log['total_time'] = $response->handlerStats()['total_time'];
+        Log::channel('custom')->info($log);
+    }
+
     private function getXML(): \SimpleXMLElement
     {
         $response = Http::get(env('EXCHANGE_RATES_URL'));
-        if ($response->status() == 404){
-            Log::channel('custom')->error('error while getting response');
-        }else{
-            Log::channel('custom')->info('response successfully received');
-        }
+        $this->responseLogging($response);
         return simplexml_load_string($response->body());
     }
 
     public function __construct(private ExchangeRateRepositoryInterface $exchangeRateRepository)
     {}
 
-
-
-    private function xmlToArray(\SimpleXMLElement $xmlObj): array
+    private function xmlToArray(): array
     {
-        return  json_decode( json_encode($xmlObj), true);
+        return  $this->dateFormatting(json_decode( json_encode($this->getXML()), true));
     }
 
-    private function dateFormatting($ratesArray):array
+    private function dateFormatting($ratesArray): array
     {
+        $rates = [];
         foreach ($ratesArray['RATE'] as $rate){
             $rate['@attributes']['ratetime'] = date_create($rate['@attributes']['ratetime']);
             $rate['@attributes']['cbratetime'] = date_create($rate['@attributes']['cbratetime']);
@@ -40,19 +44,29 @@ class Rates
         return $rates;
     }
 
-    public function toArray(): array
+    private function unsetRedundantData(array $columns): array
     {
-        $ratesArray = $this->xmlToArray($this->getXML());
-        return $this->dateFormatting($ratesArray);
+        array_shift($columns);
+        array_pop($columns);
+        array_pop($columns);
+        return $columns;
     }
 
     public function insertToTable(): void
     {
-        foreach ($this->toArray() as $rate)
+        foreach ($this->xmlToArray() as $rate)
         {
-            $this->exchangeRateRepository->createRate($rate);
-        }
-        Log::channel('custom')->info('Data inserted into table');
-    }
+            $columns = $this->unsetRedundantData($this->exchangeRateRepository->getColumnNames());
 
+            if ($columns != array_keys($rate)){
+                Log::channel('custom')->error('Invalid Data');
+                return;
+            }
+
+            $currency = $rate['currency'];
+            unset($rate['currency']);
+            $this->exchangeRateRepository->updateOrCreateRateByCurrency(['currency' => $currency], $rate);
+        }
+        Log::channel('custom')->info('create or update data');
+    }
 }
