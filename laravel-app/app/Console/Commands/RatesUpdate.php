@@ -2,9 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Interfaces\ExchangeRateRepositoryInterface;
-use App\Jobs\DataUpdateJob;
-use App\Services\OldRates;
+
 use App\Services\Rates;
 use Illuminate\Console\Command;
 
@@ -30,14 +28,18 @@ class RatesUpdate extends Command
      *
      * @return int
      */
-    public function __construct(private Rates $rates, private ExchangeRateRepositoryInterface $exchangeRateRepository)
+    public function __construct(private Rates $rates)
     {
         parent::__construct();
     }
 
     public function handle(): void
     {
-        DataUpdateJob::dispatch($this->rates, $this->exchangeRateRepository);
+        $this->info("Update Rates");
+        $bar = $this->output->createProgressBar(10);
+        $bar->start();
+        $this->rates->insertToTable($bar);
+        $bar->finish();
     }
 
 }

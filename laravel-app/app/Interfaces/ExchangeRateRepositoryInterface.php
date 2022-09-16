@@ -6,5 +6,5 @@ interface ExchangeRateRepositoryInterface
 {
     public function updateOrCreateRateByCurrency(array $currency, array $rateDetails);
 
-    public function getColumnNames();
+//    public function getColumnNames();
 }

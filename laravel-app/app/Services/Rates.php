@@ -1,28 +1,24 @@
 <?php
-
 namespace App\Services;
-
-use Illuminate\Support\Facades\Http;
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Log;
 use App\Interfaces\ExchangeRateRepositoryInterface;
-
 class Rates
 {
 
-    private function responseLogging($response): void
+    private function getResponse(): Response
     {
-        $log = [];
-        $log['status'] = $response->status();
-        $log['body'] = json_encode($response->body());
-        $log['total_time'] = $response->handlerStats()['total_time'];
-        Log::channel('custom')->info($log);
+        $client = new Client();
+//        $response = $client->get(env('EXю.CHANGE_RATES_URL'));
+        $response = $client->get('https://httpstat.us/500');
+        return $response;
     }
 
     private function getXML(): \SimpleXMLElement
     {
-        $response = Http::get(env('EXCHANGE_RATES_URL'));
-        $this->responseLogging($response);
-        return simplexml_load_string($response->body());
+        return simplexml_load_string($this->getResponse()->getBody()->getContents());
     }
 
     public function __construct(private ExchangeRateRepositoryInterface $exchangeRateRepository)
@@ -30,43 +26,56 @@ class Rates
 
     private function xmlToArray(): array
     {
-        return  $this->dateFormatting(json_decode( json_encode($this->getXML()), true));
+        $convertedData = array();
+        $xmlArray  = (array) $this->getXML();
+        foreach ($xmlArray['RATE'] as $rate)
+        {
+            $attributes = ((array) $rate)['@attributes'];
+            $convertedData[] = $attributes;
+        }
+        return $this->dateFormatting($convertedData);
     }
 
     private function dateFormatting($ratesArray): array
     {
         $rates = [];
-        foreach ($ratesArray['RATE'] as $rate){
-            $rate['@attributes']['ratetime'] = date_create($rate['@attributes']['ratetime']);
-            $rate['@attributes']['cbratetime'] = date_create($rate['@attributes']['cbratetime']);
-            $rates[] = $rate['@attributes'];
+        foreach ($ratesArray as $rate)
+        {
+            $rate['ratetime'] = date_create($rate['ratetime']);
+            $rate['cbratetime'] = date_create($rate['cbratetime']);
+            $rates[] = $rate;
         }
         return $rates;
     }
 
-    private function unsetRedundantData(array $columns): array
+    private function unsetRedundantColumns(array $columns): array
     {
-        array_shift($columns);
-        array_pop($columns);
-        array_pop($columns);
-        return $columns;
+        return array_diff($columns, ['id', 'created_at', 'updated_at']);
     }
 
-    public function insertToTable(): void
+    public function insertToTable($bar): void
     {
-        foreach ($this->xmlToArray() as $rate)
-        {
-            $columns = $this->unsetRedundantData($this->exchangeRateRepository->getColumnNames());
+        try {
+            $bar->advance();
+            $rates = $this->xmlToArray();
+        }catch (\Exception $exception){
+            Log::channel('custom')->error($exception->getMessage());
+            return;
+        }
+        foreach ($rates as $rate) {
+            $bar->advance();
 
-            if ($columns != array_keys($rate)){
+            $columns = $this->unsetRedundantColumns($this->exchangeRateRepository->getColumnNames());
+
+            if (array_diff(array_keys($rate),$columns))
+            {
                 Log::channel('custom')->error('Invalid Data');
                 return;
             }
-
             $currency = $rate['currency'];
             unset($rate['currency']);
             $this->exchangeRateRepository->updateOrCreateRateByCurrency(['currency' => $currency], $rate);
         }
-        Log::channel('custom')->info('create or update data');
+        $bar->advance();
     }
 }
